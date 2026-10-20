@@ -1,5 +1,5 @@
 {
-  description = "Strata — the best file manager on Linux (exact upstream packaging)";
+  description = "Strata — keyboard-first GTK4 file manager (Nix flake)";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -7,11 +7,9 @@
   };
 
   outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
-
-        strata = pkgs.rustPlatform.buildRustPackage rec {
+    let
+      mkStrata = pkgs:
+        pkgs.rustPlatform.buildRustPackage rec {
           pname = "strata";
           version = "1.0.0";
 
@@ -25,6 +23,9 @@
           cargoLock = {
             lockFile = "${src}/Cargo.lock";
           };
+
+          cargoBuildFlags = [ "--no-default-features" ];
+          cargoCheckFlags = [ "--no-default-features" ];
 
           nativeBuildInputs = with pkgs; [
             pkg-config
@@ -96,6 +97,11 @@
             mainProgram = "strata";
           };
         };
+    in
+    flake-utils.lib.eachDefaultSystem (system:
+      let
+        pkgs = nixpkgs.legacyPackages.${system};
+        strata = mkStrata pkgs;
       in
       {
         packages.default = strata;
@@ -112,19 +118,27 @@
             cargo-watch
             clippy
             rustfmt
-            cargo-deny
           ];
         };
       }
     ) // {
+      overlays.default = final: prev: {
+        strata = mkStrata final;
+      };
+
       nixosModules.default = { config, lib, pkgs, ... }:
         with lib;
-        let cfg = config.programs.strata; in
+        let
+          cfg = config.programs.strata;
+          system = pkgs.stdenv.hostPlatform.system;
+        in
         {
           options.programs.strata = {
-            enable = mkEnableOption "Strata file manager (exact upstream packaging)";
-            package = mkPackageOption pkgs "strata" {
-              default = self.packages.${pkgs.system}.default;
+            enable = mkEnableOption "Strata file manager";
+            package = mkOption {
+              type = types.package;
+              default = self.packages.${system}.default;
+              description = "Strata package to install";
             };
           };
 
@@ -132,9 +146,5 @@
             environment.systemPackages = [ cfg.package ];
           };
         };
-
-      overlays.default = final: prev: {
-        strata = self.packages.${prev.system}.default;
-      };
     };
 }
